@@ -97,7 +97,7 @@ func NewRSS(rssPath string) (*Rss2, error) {
 	return rss, nil
 }
 
-func (config Config) Run() {
+func (config Config) RunSend() {
 	if config.Telegram.Send {
 		log.Println("Send to telegram.")
 	}
@@ -148,5 +148,5 @@ func main() {
 
 	// Run send data depended on configuration options
 	log.Println("Run send process.")
-	cfg.Run()
+	cfg.RunSend()
 }
