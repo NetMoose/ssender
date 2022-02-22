@@ -1,37 +1,102 @@
 package main
 
 import (
-	"fmt"
-	"strings"
+	"log"
+	"os"
 
 	"github.com/jessevdk/go-flags"
+	"gopkg.in/yaml.v2"
 )
 
+type Config struct {
+	Telegram struct {
+		Send  bool   `yaml:"send"`
+		Token string `yaml:"token"`
+	} `yaml:"telegram"`
+	VK struct {
+		Send  bool   `yaml:"send"`
+		Token string `yaml:"token"`
+	} `yaml:"vk"`
+	Facebook struct {
+		Send  bool   `yaml:"send"`
+		Token string `yaml:"token"`
+	} `yaml:"facebook"`
+}
+
+func NewConfig(configPath string) (*Config, error) {
+	// Create config structure
+	config := &Config{}
+
+	// Open config file
+	file, err := os.Open(configPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	// Init new YAML decode
+	d := yaml.NewDecoder(file)
+
+	// Start YAML decoding from file
+	if err := d.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
 type Options struct {
-	Telegram      bool   `short:"t" long:"telegram-send" description:"Send to telegram"`
-	Telegramtoken string `short:"k" long:"telegram-token" description:"Token for send to telegram"`
-	VK            bool   `short:"v" long:"vk-send" description:"Send to vk"`
-	VKtoken       string `short:"b" long:"vk-token" description:"Token for send to VK"`
-	Facebook      bool   `short:"f" long:"fb-send" description:"Send to Facebook"`
-	FBtoken       string `short:"m" long:"fb-token" description:"Token for send to Facebook"`
+	FileParse  string `short:"f" long:"fileparse" description:"File for parce (rss xml)"`
+	ConfigPath string `short:"c" long:"configpath" description:"Config file path"`
+}
+
+var ConfigPath = "/etc/ssender/config.yml"
+
+func (config Config) Run() {
+	if config.Telegram.Send {
+		log.Println("Send to telegram.")
+	}
+	if config.VK.Send {
+		log.Println("Send to VK.")
+	}
+	if config.Facebook.Send {
+		log.Println("Send to Facebook.")
+	}
 }
 
 func main() {
+	// Parse flags
 	var options Options
 	var parser = flags.NewParser(&options, flags.Default)
-	// parser.CommandHandler = func(command flags.Commander, args []string) error {
-	// 	print(options.Telegram)
-	// }
-	args, err := parser.Parse()
-	if err != nil {
-		panic(err)
+	if _, err := parser.Parse(); err != nil {
+		switch flagsErr := err.(type) {
+		case flags.ErrorType:
+			if flagsErr == flags.ErrHelp {
+				os.Exit(0)
+			}
+			os.Exit(1)
+		default:
+			os.Exit(1)
+		}
+	}
+	log.Println("Flags processed.")
+
+	if options.ConfigPath != "" {
+		log.Printf("Config from: %s\n", options.ConfigPath)
+		ConfigPath = options.ConfigPath
 	}
 
-	fmt.Printf("Telegram send: %v\n", options.Telegram)
-	fmt.Printf("Telegram token: %s\n", options.Telegramtoken)
-	fmt.Printf("VK send: %v\n", options.VK)
-	fmt.Printf("VK token: %s\n", options.VKtoken)
-	fmt.Printf("Facebook send: %v\n", options.Facebook)
-	fmt.Printf("Facebook token: %s\n", options.FBtoken)
-	fmt.Printf("Remaining args: %s\n", strings.Join(args, " "))
+	// Get config
+	cfg, err := NewConfig(ConfigPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("Config processed.")
+
+	// Parse file
+	log.Printf("Parse file ... \n")
+
+	// Run send data depended on configuration options
+	log.Println("Run send process.")
+	cfg.Run()
 }
