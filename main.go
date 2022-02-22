@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/xml"
+	"html/template"
 	"log"
 	"os"
 
@@ -52,6 +54,49 @@ type Options struct {
 
 var ConfigPath = "/etc/ssender/config.yml"
 
+type Rss2 struct {
+	XMLName xml.Name `xml:"rss"`
+	Version string   `xml:"version,attr"`
+	// Required
+	Title       string `xml:"channel>title"`
+	Link        string `xml:"channel>link"`
+	Description string `xml:"channel>description"`
+	// Optional
+	PubDate  string `xml:"channel>pubDate"`
+	ItemList []Item `xml:"channel>item"`
+}
+
+type Item struct {
+	// Required
+	Title       string        `xml:"title"`
+	Link        string        `xml:"link"`
+	Description template.HTML `xml:"description"`
+	// Optional
+	Content  template.HTML `xml:"encoded"`
+	PubDate  string        `xml:"pubDate"`
+	Comments string        `xml:"comments"`
+}
+
+func NewRSS(rssPath string) (*Rss2, error) {
+	rss := &Rss2{}
+
+	// Open rss2 file
+	file, err := os.Open(rssPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	d := xml.NewDecoder(file)
+
+	// Start RSS decoding from file
+	if err := d.Decode(&rss); err != nil {
+		return nil, err
+	}
+
+	return rss, nil
+}
+
 func (config Config) Run() {
 	if config.Telegram.Send {
 		log.Println("Send to telegram.")
@@ -94,7 +139,12 @@ func main() {
 	log.Println("Config processed.")
 
 	// Parse file
-	log.Printf("Parse file ... \n")
+	log.Printf("Parse file %s \n", options.FileParse)
+	rss, err := NewRSS(options.FileParse)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Rss: %v\n", rss)
 
 	// Run send data depended on configuration options
 	log.Println("Run send process.")
