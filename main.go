@@ -1,16 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"html/template"
 	"log"
 	"os"
 
+	"github.com/boltdb/bolt"
 	"github.com/jessevdk/go-flags"
 	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
+	Dbpath   string `yaml:"dbpath"`
 	Telegram struct {
 		Send  bool   `yaml:"send"`
 		Token string `yaml:"token"`
@@ -48,8 +51,9 @@ func NewConfig(configPath string) (*Config, error) {
 }
 
 type Options struct {
-	FileParse  string `short:"f" long:"fileparse" description:"File for parce (rss xml)"`
+	FileParse  string `short:"f" long:"fileparse" description:"File for parce (rss xml)" required:"true"`
 	ConfigPath string `short:"c" long:"configpath" description:"Config file path"`
+	InitDB     bool   `short:"i" long:"initdb" description:"Run initialize from current file"`
 }
 
 var ConfigPath = "/etc/ssender/config.yml"
@@ -97,19 +101,105 @@ func NewRSS(rssPath string) (*Rss2, error) {
 	return rss, nil
 }
 
-func (config Config) RunSend() {
-	if config.Telegram.Send {
-		log.Println("Send to telegram.")
+type SendItems struct {
+	ItemList []Item
+}
+
+var senditems SendItems
+
+func FindItems(rss Rss2, dbpath string) {
+	db, err := bolt.Open(dbpath, 0600, nil)
+	if err != nil {
+		log.Fatal(err)
 	}
-	if config.VK.Send {
-		log.Println("Send to VK.")
-	}
-	if config.Facebook.Send {
-		log.Println("Send to Facebook.")
+	defer db.Close()
+
+	for _, v := range rss.ItemList {
+		db.View(func(tx *bolt.Tx) error {
+			// Assume bucket exists and has keys
+			b := tx.Bucket([]byte("rss"))
+			c := b.Cursor()
+			flag := false
+			for key, _ := c.First(); key != nil; key, _ = c.Next() {
+				if v.Link == string(key) {
+					flag = true
+					break
+				}
+			}
+			if flag != true {
+				senditems.ItemList = append(senditems.ItemList, v)
+			}
+			return nil
+		})
 	}
 }
 
+func InitDb(rss Rss2, dbpath string) {
+	log.Println("Initialize DB")
+	db, err := bolt.Open(dbpath, 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("rss"))
+		if err != nil {
+			return err
+		}
+		for _, v := range rss.ItemList {
+			encoded, err := json.Marshal(v)
+			if err != nil {
+				return err
+			}
+			err = b.Put([]byte(v.Link), encoded)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (config Config) RunSend() {
+	if config.Telegram.Send {
+		log.Println("Send to telegram")
+	}
+	if config.VK.Send {
+		log.Println("Send to VK")
+	}
+	if config.Facebook.Send {
+		log.Println("Send to Facebook")
+	}
+}
+
+func UpdateDb(dbpath string) {
+	log.Println("Update DB")
+	db, err := bolt.Open(dbpath, 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("rss"))
+		for _, v := range senditems.ItemList {
+			encoded, err := json.Marshal(v)
+			if err != nil {
+				return err
+			}
+			err = b.Put([]byte(v.Link), encoded)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+}
+
 func main() {
+	log.Println("Run processing")
 	// Parse flags
 	var options Options
 	var parser = flags.NewParser(&options, flags.Default)
@@ -124,7 +214,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	log.Println("Flags processed.")
+	log.Println("Flags processed")
 
 	if options.ConfigPath != "" {
 		log.Printf("Config from: %s\n", options.ConfigPath)
@@ -136,17 +226,26 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Config processed.")
+	log.Println("Config processed")
 
-	// Parse file
+	// Parse rss file
 	log.Printf("Parse file %s \n", options.FileParse)
 	rss, err := NewRSS(options.FileParse)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Rss: %v\n", rss)
+	if options.InitDB {
+		InitDb(*rss, cfg.Dbpath)
+	} else {
+		//Find new items
+		FindItems(*rss, cfg.Dbpath)
 
-	// Run send data depended on configuration options
-	log.Println("Run send process.")
-	cfg.RunSend()
+		if len(senditems.ItemList) > 0 {
+			// Run send data depended on configuration options
+			log.Println("Run send process")
+			cfg.RunSend()
+			UpdateDb(cfg.Dbpath)
+		}
+	}
+	log.Println("End processing")
 }
