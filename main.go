@@ -3,11 +3,13 @@ package main
 import (
 	"encoding/json"
 	"encoding/xml"
+	"html"
 	"html/template"
 	"log"
 	"os"
 
 	"github.com/boltdb/bolt"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jessevdk/go-flags"
 	"gopkg.in/yaml.v2"
 )
@@ -15,8 +17,10 @@ import (
 type Config struct {
 	Dbpath   string `yaml:"dbpath"`
 	Telegram struct {
-		Send  bool   `yaml:"send"`
-		Token string `yaml:"token"`
+		Send      bool   `yaml:"send"`
+		SendDebug bool   `yaml:"senddebug"`
+		ChatId    int64  `yaml:"chatid"`
+		Token     string `yaml:"token"`
 	} `yaml:"telegram"`
 	VK struct {
 		Send  bool   `yaml:"send"`
@@ -164,6 +168,21 @@ func InitDb(rss Rss2, dbpath string) {
 func (config Config) RunSend() {
 	if config.Telegram.Send {
 		log.Println("Send to telegram")
+		bot, err := tgbotapi.NewBotAPI(config.Telegram.Token)
+		if err != nil {
+			log.Panic(err)
+		}
+		bot.Debug = config.Telegram.SendDebug
+		for _, v := range senditems.ItemList {
+			s := "<b>" + string(v.Title) + "</b>\n" + html.UnescapeString(string(v.Description)) +
+				"\n" + v.Link
+			msg := tgbotapi.NewMessage(config.Telegram.ChatId, s)
+			msg.ParseMode = "Html"
+			_, err := bot.Send(msg)
+			if err != nil {
+				log.Panic(err)
+			}
+		}
 	}
 	if config.VK.Send {
 		log.Println("Send to VK")
