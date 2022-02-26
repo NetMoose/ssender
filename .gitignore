@@ -2,3 +2,4 @@
 main
 *.xml
 ssender
+*.db

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/SevereCloud/vksdk/v2/api"
 	"github.com/boltdb/bolt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jessevdk/go-flags"
@@ -23,8 +24,9 @@ type Config struct {
 		Token     string `yaml:"token"`
 	} `yaml:"telegram"`
 	VK struct {
-		Send  bool   `yaml:"send"`
-		Token string `yaml:"token"`
+		Send    bool   `yaml:"send"`
+		Token   string `yaml:"token"`
+		OwnerId int64  `yaml:"ownerid"`
 	} `yaml:"vk"`
 	Facebook struct {
 		Send  bool   `yaml:"send"`
@@ -166,29 +168,42 @@ func InitDb(rss Rss2, dbpath string) {
 }
 
 func (config Config) RunSend() {
-	if config.Telegram.Send {
-		log.Println("Send to telegram")
-		bot, err := tgbotapi.NewBotAPI(config.Telegram.Token)
-		if err != nil {
-			log.Panic(err)
-		}
-		bot.Debug = config.Telegram.SendDebug
-		for _, v := range senditems.ItemList {
+	for _, v := range senditems.ItemList {
+		if config.Telegram.Send {
+			log.Println("Send to telegram")
+			bot, err := tgbotapi.NewBotAPI(config.Telegram.Token)
+			if err != nil {
+				log.Panic(err)
+			}
+			bot.Debug = config.Telegram.SendDebug
+
 			s := "<b>" + string(v.Title) + "</b>\n" + html.UnescapeString(string(v.Description)) +
 				"\n" + v.Link
 			msg := tgbotapi.NewMessage(config.Telegram.ChatId, s)
 			msg.ParseMode = "Html"
-			_, err := bot.Send(msg)
+			_, err = bot.Send(msg)
 			if err != nil {
 				log.Panic(err)
+
 			}
+			log.Println("Sended to telegram")
 		}
-	}
-	if config.VK.Send {
-		log.Println("Send to VK")
-	}
-	if config.Facebook.Send {
-		log.Println("Send to Facebook")
+		if config.VK.Send {
+			log.Println("Send to VK")
+			vk := api.NewVK(config.VK.Token)
+			_, err := vk.WallPost(api.Params{
+				"owner_id":    config.VK.OwnerId,
+				"attachments": v.Link,
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Println("Sended to VK")
+		}
+		if config.Facebook.Send {
+			log.Println("Send to Facebook")
+			log.Println("Sending to facebook is not implemented yet")
+		}
 	}
 }
 
