@@ -1,2 +1,2 @@
-# ssender
+# Social sender
 Social sender
